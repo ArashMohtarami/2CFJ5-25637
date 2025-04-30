@@ -14,12 +14,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY')
+SECRET_KEY = config("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+DEBUG = config("DEBUG", default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = config(
+    "ALLOWED_HOSTS", cast=lambda v: [s.strip() for s in v.split(",")]
+)
 
 
 # Application definition
@@ -34,6 +36,7 @@ INSTALLED_APPS = [
 
     "rest_framework",
     "rest_framework.authtoken",
+    "drf_spectacular",
 
     "booking_app",
 ]
@@ -128,4 +131,11 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.TokenAuthentication",
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Restaurant Booking API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
