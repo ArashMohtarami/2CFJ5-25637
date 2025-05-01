@@ -1,18 +1,21 @@
-from django.db import transaction
+from django.db.models import Sum, When, Case, Q, FloatField, F, IntegerField
+from django.db.models.functions import Coalesce
 from rest_framework import mixins, viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from booking_app.models import Table, Reservation
-from booking_app.api.serializers import ReservationSerializer, BookSerializer, CancelReservationSerializer
+from booking_app.api.serializers import (
+    ReservationSerializer,
+    BookSerializer,
+    CancelReservationSerializer,
+)
 
 # cost per seat
 SEAT_COST = 100
 
 
-class ReservationViewSet(
-    viewsets.GenericViewSet, mixins.ListModelMixin
-):
+class ReservationViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     """
     ViewSet for managing restaurant reservations.
 
@@ -27,8 +30,8 @@ class ReservationViewSet(
     serializer_class = ReservationSerializer
 
     def get_queryset(self):
-        return (
-            self.queryset.filter(user=self.request.user).select_related('user', 'table')
+        return self.queryset.filter(user=self.request.user).select_related(
+            "user", "table"
         )
 
     @action(
@@ -51,41 +54,60 @@ class ReservationViewSet(
         serializer.is_valid(raise_exception=True)
         people = serializer.validated_data["number_of_people"]
 
-        adjusted_seats = people
-        if 4 <= people:
+        if people % 2 == 1:
+            adjusted_seats = people + 1
+        else:
             adjusted_seats = people
-        elif people % 2 == 1:
-            adjusted_seats = 4
 
-        with transaction.atomic():
-            table = (
-                Table.objects.select_for_update(skip_locked=True)
-                .filter(is_reserved=False, seats__gte=adjusted_seats)
-                .order_by("seats")
-                .first()
+        cost_conditions = Case(
+            When(Q(seats=people), then=(people - 1) * SEAT_COST),
+            When(Q(available_seats=people), then=people * SEAT_COST),
+            When(Q(seats=adjusted_seats), then=(adjusted_seats - 1) * SEAT_COST),
+            When(
+                Q(available_seats__gte=adjusted_seats),
+                then=adjusted_seats * SEAT_COST,
+            ),
+            default=0,
+            output_field=FloatField(),
+        )
+
+        number_of_seats_conditions = Case(
+            When(Q(seats=people), then=people),
+            When(Q(available_seats=people), then=people),
+            When(Q(seats=adjusted_seats), then=adjusted_seats),
+            When(
+                Q(available_seats__gte=adjusted_seats),
+                then=adjusted_seats,
+            ),
+            default=0,
+            output_field=IntegerField(),
+        )
+
+        table = (
+            Table.objects.annotate(
+                available_seats=F("seats")
+                - Coalesce(Sum("reservations__number_of_seats"), 0)
             )
-
-            if not table:
-                return Response(
-                    {"detail": "No suitable table available."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            table.is_reserved = True
-            table.save()
-
-            if adjusted_seats == table.seats:
-                cost = (table.seats - 1) * SEAT_COST
-            else:
-                cost = adjusted_seats * SEAT_COST
-
-            reservation = Reservation.objects.create(
-                user=request.user,
-                table=table,
-                number_of_seats=adjusted_seats,
-                cost=cost,
+            .filter(available_seats__gte=people)
+            .annotate(
+                calculated_cost=cost_conditions,
+                calculated_number_of_seats=number_of_seats_conditions,
             )
-
+            .exclude(calculated_cost=0.0)
+            .order_by("calculated_cost", "available_seats")
+            .first()
+        )
+        if not table:
+            return Response(
+                {"detail": "No suitable table available."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reservation = Reservation.objects.create(
+            user=request.user,
+            table=table,
+            number_of_seats=table.calculated_number_of_seats,
+            cost=table.calculated_cost,
+        )
         return Response(
             ReservationSerializer(reservation).data,
             status=status.HTTP_200_OK,
@@ -116,17 +138,13 @@ class ReservationViewSet(
             )
 
         try:
-            reservation = Reservation.objects.get(
-                id=reservation_id, user=request.user
-            )
+            reservation = Reservation.objects.get(id=reservation_id, user=request.user)
         except Reservation.DoesNotExist:
             return Response(
                 {"detail": "Reservation not found."},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        reservation.table.is_reserved = False
-        reservation.table.save()
         reservation.delete()
 
         return Response(

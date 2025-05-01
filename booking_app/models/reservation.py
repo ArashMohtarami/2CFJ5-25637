@@ -20,7 +20,7 @@ class Reservation(TimeStampMixin):
     """
 
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    table = models.ForeignKey("Table", on_delete=models.CASCADE)
+    table = models.ForeignKey("Table", on_delete=models.CASCADE, related_name="reservations")
     number_of_seats = models.IntegerField()
     cost = models.IntegerField()
 
