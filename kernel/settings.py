@@ -3,8 +3,7 @@ Django settings for kernel project.
 """
 
 from pathlib import Path
-
-from decouple import config
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -14,14 +13,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config("SECRET_KEY")
+SECRET_KEY = os.environ.get('SECRET_KEY', 'fallback-secret')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config("DEBUG", default=True, cast=bool)
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = config(
-    "ALLOWED_HOSTS", cast=lambda v: [s.strip() for s in v.split(",")]
-)
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '')
+ALLOWED_HOSTS = [host.strip() for host in ALLOWED_HOSTS.split(',') if host.strip()]
 
 
 # Application definition
@@ -77,12 +75,12 @@ WSGI_APPLICATION = "kernel.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql_psycopg2",
-        "NAME": config("DB_NAME"),
-        "USER": config("DB_USER"),
-        "PASSWORD": config("DB_PASSWORD"),
-        "HOST": config("DB_HOST"),
-        "PORT": config("DB_PORT"),
-        "TEST": {"NAME": config("DB_TEST")},
+        "NAME": os.environ.get('DB_NAME'),
+        "USER": os.environ.get('DB_USER'),
+        "PASSWORD": os.environ.get('DB_PASSWORD'),
+        "HOST": os.environ.get('DB_HOST', 'localhost'),
+        "PORT": os.environ.get('DB_PORT', '5432'),
+        "TEST": {"NAME": os.environ.get("DB_TEST", "db_test")},
     },
 }
 
